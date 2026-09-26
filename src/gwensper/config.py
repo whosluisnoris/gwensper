@@ -21,11 +21,13 @@ MODELS = ["tiny", "base", "small", "medium", "large-v3-turbo", "large-v3"]
 def _store_python_family() -> str | None:
     """Nombre de familia del paquete si se ejecuta con Python de la Microsoft Store.
 
-    Ej.: sys.prefix = ...\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0
+    Ej.: sys.base_prefix = ...\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0
     -> "PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0".
     """
-    name = Path(sys.prefix).name
-    if "\\windowsapps\\" not in sys.prefix.lower() or "__" not in name:
+    # base_prefix: dentro de un entorno virtual creado con Python de la Store, la
+    # redirección de %APPDATA% sigue aplicando.
+    name = Path(sys.base_prefix).name
+    if "\\windowsapps\\" not in sys.base_prefix.lower() or "__" not in name:
         return None
     return f"{name.split('_')[0]}_{name.rsplit('__', 1)[1]}"
 

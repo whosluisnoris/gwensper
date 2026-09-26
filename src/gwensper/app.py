@@ -98,6 +98,7 @@ class Controller(QObject):
         # Señales de los hilos
         self.sig.status.connect(self._on_status)
         self.sig.progress.connect(self.overlay.set_progress)
+        self.sig.progress.connect(self._on_load_progress)
         self.sig.model_loaded.connect(self._on_model_loaded)
         self.sig.level.connect(self.overlay.set_level)
         self.sig.busy.connect(self.overlay.set_busy)
@@ -131,6 +132,11 @@ class Controller(QObject):
         self._refresh_window()
         if not self.ready:
             self.overlay.set_state("loading", text)
+
+    def _on_load_progress(self, pct: int) -> None:
+        if not self.ready and 0 <= pct < 100:
+            self.status_text = f"Descargando el modelo, {pct} %"
+            self._refresh_window()
 
     def _on_model_loaded(self, ok: bool, detail: str) -> None:
         self.ready = ok

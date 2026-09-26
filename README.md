@@ -8,7 +8,7 @@ Todo corre en tu computadora: el audio no sale de tu PC.
 
 ## Cómo funciona
 
-1. Abre Gwensper desde el menú Inicio. Se abre su ventana y queda un icono en la bandeja del sistema.
+1. Instálalo (ver abajo) y ábrelo desde el menú Inicio. Se abre su ventana y queda un icono en la bandeja del sistema.
 2. Pon el cursor donde quieras escribir y presiona **Ctrl+Alt+D**. Aparece un pequeño indicador flotante.
 3. Habla. Con GPU, las palabras se escriben mientras hablas, 1 o 2 segundos detrás de tu voz. En CPU, cada frase se escribe al hacer una pausa.
 4. Presiona **Ctrl+Alt+D** otra vez para detener. El indicador desaparece en cuanto se escribe lo último que dijiste.
@@ -26,26 +26,33 @@ El indicador no roba el foco: puedes hacer clic en él para detener el dictado y
 
 ## Instalación
 
-Necesitas **Windows 10 u 11** y **Python 3.10 o superior** ([python.org](https://www.python.org/downloads/) o Microsoft Store).
+**[⬇ Descargar el instalador (Instalar-Gwensper.bat)](https://github.com/whosluisnoris/gwensper/releases/latest/download/Instalar-Gwensper.bat)**
 
-### En cualquier PC (CPU)
+Dale doble clic y listo. No necesitas Python ni descargar el repositorio: el instalador instala lo que falte, descarga el modelo de voz, crea el acceso directo en el menú Inicio y registra Gwensper en «Aplicaciones instaladas», desde donde también se desinstala. Si tienes una tarjeta gráfica NVIDIA, instala la aceleración para usarla.
+
+Windows mostrará el aviso «Windows protegió tu PC»: haz clic en **Más información → Ejecutar de todas formas**.
+
+Paso a paso, requisitos, cómo actualizar y solución de problemas: **[Guía de instalación](docs/INSTALACION.md)**.
+
+<details>
+<summary>Instalación avanzada con pip</summary>
+
+Con Python 3.10–3.13 de 64 bits:
 
 ```powershell
-pip install git+https://github.com/whosluisnoris/gwensper
+pip install https://github.com/whosluisnoris/gwensper/archive/refs/heads/main.zip
 gwensper
 ```
 
-La primera vez, Gwensper descarga el modelo de voz (unos 480 MB para `small`) y crea un acceso directo en el menú Inicio. Después puedes abrirlo buscando **Gwensper** en Inicio.
-
-### Con GPU NVIDIA (opcional, mucho más rápido)
+Con GPU NVIDIA, agrega el extra `cuda` (cuBLAS y cuDNN):
 
 ```powershell
-pip install "gwensper[cuda] @ git+https://github.com/whosluisnoris/gwensper"
+pip install "gwensper[cuda] @ https://github.com/whosluisnoris/gwensper/archive/refs/heads/main.zip"
 ```
 
-El extra `cuda` instala cuBLAS y cuDNN. Si ya tienes PyTorch con CUDA instalado, no hace falta: Gwensper usa esas mismas librerías. Con GPU, el modelo por defecto es `large-v3-turbo`, más preciso, y el dictado se escribe mientras hablas. Si algo falla con la GPU, Gwensper usa la CPU automáticamente.
+Si ya tienes PyTorch con CUDA, no hace falta el extra: Gwensper usa esas mismas librerías. Si algo falla con la GPU, usa la CPU automáticamente. Si el comando `gwensper` no se reconoce, usa `python -m gwensper`.
 
-> Si el comando `gwensper` no se reconoce, la carpeta de scripts de Python no está en tu PATH. Usa `python -m gwensper`, o `python -m gwensper --install-shortcut` para crear el acceso directo en el menú Inicio.
+</details>
 
 ## La ventana principal
 
@@ -121,6 +128,9 @@ src/gwensper/
   window.py       ventana principal: configuración y modelos
   models.py       catálogo de modelos: descargar y eliminar
   hotkey.py       atajo global (RegisterHotKey)
+install/
+  install.ps1             instalador (Python, entorno, librerías, modelo, accesos directos)
+  Instalar-Gwensper.bat   lo que se descarga desde Releases: baja y ejecuta install.ps1
 ```
 
 ## Créditos

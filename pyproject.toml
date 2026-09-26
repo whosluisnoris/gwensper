@@ -39,7 +39,7 @@ Homepage = "https://github.com/whosluisnoris/gwensper"
 where = ["src"]
 
 [tool.setuptools.package-data]
-gwensper = ["assets/*"]
+gwensper = ["assets/*", "assets/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

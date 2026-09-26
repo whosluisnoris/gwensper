@@ -29,13 +29,16 @@ def startup_link() -> Path:
 
 def launch_target() -> tuple[str, str]:
     """(ejecutable, argumentos) para abrir Gwensper sin consola."""
-    candidates = [shutil.which("gwensper")]
-    for scheme in (f"{os.name}_user", None):
+    # Primero el Gwensper del mismo entorno de Python que está corriendo (p. ej. el entorno
+    # aislado que crea el instalador); si no, el de usuario, y al final el del PATH.
+    candidates = [str(Path(sys.executable).parent / "gwensper.exe")]
+    for scheme in (None, f"{os.name}_user"):
         try:
             scripts = sysconfig.get_path("scripts", scheme) if scheme else sysconfig.get_path("scripts")
             candidates.append(str(Path(scripts) / "gwensper.exe"))
         except KeyError:
             pass
+    candidates.append(shutil.which("gwensper"))
     for c in candidates:
         if c and Path(c).exists():
             return c, ""
