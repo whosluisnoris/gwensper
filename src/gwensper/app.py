@@ -20,6 +20,7 @@ from .hotkey import GlobalHotkey
 from .icon import app_icon
 from .overlay import Overlay
 from .segmenter import Segmenter
+from .streaming import LiveTranscript, Word
 from .settings import SettingsDialog
 from .transcriber import Transcriber
 from .tray import Tray
@@ -29,6 +30,8 @@ log = logging.getLogger(__name__)
 
 SERVER_NAME = f"gwensper-{getpass.getuser()}"
 CONTEXT_CHARS = 200
+LIVE_INTERVAL_S = 1.0   # cada cuánto se vuelve a transcribir la frase en curso
+LIVE_MIN_AUDIO_S = 1.0  # no transcribir en vivo pedazos más cortos
 
 
 class Signals(QObject):
@@ -59,6 +62,8 @@ class Controller(QObject):
         self.context = ""
         self.source = None
         self.segmenter: Segmenter | None = None
+        self.segmenter_lock = threading.Lock()
+        self.live: dict[int, LiveTranscript] = {}  # frases en curso transcritas en vivo
         self._audio_thread: threading.Thread | None = None
         self._stop_audio = threading.Event()
 
@@ -166,6 +171,7 @@ class Controller(QObject):
             silence_ms=cfg.silence_ms, max_phrase_s=cfg.max_phrase_s, sensitivity=cfg.sensitivity
         )
         self.context = ""
+        self.live.clear()
         self._stop_audio.clear()
         self._audio_thread = threading.Thread(
             target=self._audio_loop, args=(source, self.segmenter), daemon=True, name="audio"
@@ -188,9 +194,11 @@ class Controller(QObject):
         if self._audio_thread is not None:
             self._audio_thread.join(timeout=1)
         if self.segmenter is not None:
-            tail = self.segmenter.flush()
+            with self.segmenter_lock:
+                tail = self.segmenter.flush()
+                seq = self.segmenter.phrase_seq
             if tail is not None:
-                self.phrases.put(tail)
+                self.phrases.put((seq, tail))
         self.source = None
         self.tray.set_listening(False)
         # La píldora sigue visible hasta que se escriba la última frase.
@@ -211,21 +219,41 @@ class Controller(QObject):
                     self.sig.source_finished.emit()
                     return
                 continue
-            for phrase in segmenter.feed(frame):
-                self.phrases.put(phrase)
+            with self.segmenter_lock:
+                phrases = segmenter.feed(frame)
+                seq = segmenter.phrase_seq
+            for phrase in phrases:
+                self.phrases.put((seq, phrase))
             n += 1
             if n % 2 == 0:
                 self.sig.level.emit(segmenter.level)
 
+    def live_enabled(self) -> bool:
+        mode = self.cfg.live_mode
+        return mode == "on" or (mode == "auto" and self.transcriber.device == "cuda")
+
     def _transcribe_loop(self) -> None:
+        last_live = {"seq": -1, "samples": 0}
         while True:
-            audio = self.phrases.get()
+            try:
+                seq, audio = self.phrases.get(timeout=0.1)
+            except queue.Empty:
+                if self.listening and self.ready and self.live_enabled():
+                    self._live_pass(last_live)
+                continue
             self.sig.busy.emit(True)
             try:
-                with self.model_lock:
-                    text = self.transcriber.transcribe(audio, prompt=self.context[-CONTEXT_CHARS:])
-                text = postprocess.clean(text)
-                log.info("Frase (%.1fs): %r", len(audio) / 16000, text)
+                live = self.live.pop(seq, None)
+                if live is not None:
+                    # Solo falta el audio posterior a lo ya escrito en vivo.
+                    audio = audio[int(live.offset * 16000):]
+                prompt = live.prompt if live else self.context[-CONTEXT_CHARS:]
+                text = ""
+                if len(audio) >= 0.3 * 16000:
+                    with self.model_lock:
+                        text = postprocess.clean(self.transcriber.transcribe(audio, prompt=prompt))
+                log.info("Frase (%.1fs restantes): %r%s", len(audio) / 16000, text,
+                         f" | en vivo: {' '.join(live.committed)!r}" if live else "")
                 if text:
                     self.sig.text.emit(text)
             except Exception:  # noqa: BLE001
@@ -234,6 +262,42 @@ class Controller(QObject):
                 self.phrases.task_done()
                 if self.phrases.empty():
                     self.sig.busy.emit(False)
+
+    def _live_pass(self, last: dict) -> None:
+        """Transcribe la frase en curso y escribe las palabras ya confirmadas."""
+        segmenter = self.segmenter
+        if segmenter is None:
+            return
+        with self.segmenter_lock:
+            snap = segmenter.snapshot()
+        if snap is None:
+            return
+        seq, audio = snap
+        if len(audio) < LIVE_MIN_AUDIO_S * 16000:
+            return
+        if seq == last["seq"] and len(audio) - last["samples"] < LIVE_INTERVAL_S * 16000:
+            return
+        last["seq"], last["samples"] = seq, len(audio)
+        live = self.live.get(seq)
+        if live is None:
+            live = self.live[seq] = LiveTranscript(self.context[-CONTEXT_CHARS:], CONTEXT_CHARS)
+        pending = audio[int(live.offset * 16000):]
+        if len(pending) < LIVE_MIN_AUDIO_S * 16000:
+            return
+        try:
+            with self.model_lock:
+                words = self.transcriber.transcribe_words(pending, prompt=live.prompt)
+        except Exception:  # noqa: BLE001
+            log.exception("Error en la transcripción en vivo")
+            return
+        if not postprocess.clean(" ".join(w.text for w in words)):
+            live.reset_hypothesis()
+            return
+        # Tiempos relativos al inicio de la frase.
+        words = [Word(w.text, w.start + live.offset, w.end + live.offset) for w in words]
+        new = live.update(words)
+        if new:
+            self.sig.text.emit(" ".join(new))
 
     def _insert_text(self, text: str) -> None:
         piece = postprocess.join(self.context, text)
@@ -297,7 +361,7 @@ class Controller(QObject):
             or reload_model
         )
         for f in ("hotkey", "language", "device", "model", "input_device", "silence_ms", "sensitivity",
-                  "insert_mode"):
+                  "insert_mode", "live_mode"):
             setattr(self.cfg, f, getattr(new, f))
         self.cfg.save()
         self.typer.mode = self.cfg.insert_mode

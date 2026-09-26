@@ -64,6 +64,13 @@ class SettingsDialog(QDialog):
         self.insert_mode = _combo([("type", "Teclear palabra por palabra"), ("paste", "Pegar (Ctrl+V), la frase completa de una vez")],
                                   cfg.insert_mode)
 
+        self.live_mode = _combo([
+            ("auto", "Automático (mientras hablo si hay GPU)"),
+            ("on", "Mientras hablo"),
+            ("off", "Al terminar cada frase"),
+        ], cfg.live_mode)
+        self.live_mode.setToolTip("En vivo, el texto aparece 1-2 s detrás de tu voz. En CPU puede ir lento.")
+
         form = QFormLayout()
         form.addRow("Atajo para dictar:", self.hotkey)
         form.addRow("Idioma:", self.language)
@@ -73,6 +80,7 @@ class SettingsDialog(QDialog):
         form.addRow("Pausa que cierra una frase:", self.silence)
         form.addRow("Umbral de voz:", self.sensitivity)
         form.addRow("Cómo escribir:", self.insert_mode)
+        form.addRow("Cuándo escribir:", self.live_mode)
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
@@ -102,4 +110,5 @@ class SettingsDialog(QDialog):
         self.cfg.silence_ms = self.silence.value()
         self.cfg.sensitivity = self.sensitivity.value()
         self.cfg.insert_mode = self.insert_mode.currentData()
+        self.cfg.live_mode = self.live_mode.currentData()
         self.accept()

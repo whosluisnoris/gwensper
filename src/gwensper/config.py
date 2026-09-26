@@ -56,6 +56,7 @@ class Config:
     max_phrase_s: float = 20.0    # corta frases muy largas
     sensitivity: float = 3.0      # umbral de voz = ruido de fondo x sensibilidad
     insert_mode: str = "type"     # type | paste
+    live_mode: str = "auto"       # auto (en vivo solo con GPU) | on | off
     overlay_always: bool = False  # False = la píldora solo aparece mientras dictas
     overlay_x: int | None = None
     overlay_y: int | None = None
@@ -88,6 +89,8 @@ class Config:
             cfg.device = "auto"
         if cfg.insert_mode not in ("type", "paste"):
             cfg.insert_mode = "type"
+        if cfg.live_mode not in ("auto", "on", "off"):
+            cfg.live_mode = "auto"
         return cfg
 
     def save(self, path: Path | None = None) -> None:

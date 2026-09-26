@@ -38,6 +38,7 @@ class Segmenter:
         self.noise: float | None = None
         self.level = 0.0  # 0..1 para la interfaz
         self._pre_roll: deque[np.ndarray] = deque(maxlen=max(1, pre_roll_ms // frame_ms))
+        self.phrase_seq = 0  # número de la frase en curso (o de la última que terminó)
         self._reset_phrase()
 
     def _reset_phrase(self) -> None:
@@ -73,6 +74,7 @@ class Segmenter:
             if self._onset >= 2:
                 # Inicio de frase: incluye el pre-roll (y el frame actual).
                 self.in_speech = True
+                self.phrase_seq += 1
                 self._frames = list(self._pre_roll)
                 self._rms = [rms(f) for f in self._frames]
                 self._voiced = self._onset
@@ -106,6 +108,12 @@ class Segmenter:
         if voiced < self.min_speech_frames or not frames:
             return []
         return [np.concatenate(frames).astype(np.float32, copy=False)]
+
+    def snapshot(self) -> tuple[int, np.ndarray] | None:
+        """Audio acumulado de la frase en curso (para transcribir en vivo), o None."""
+        if not self.in_speech or not self._frames:
+            return None
+        return self.phrase_seq, np.concatenate(self._frames).astype(np.float32, copy=False)
 
     def flush(self) -> np.ndarray | None:
         """Cierra la frase en curso (al apagar el dictado)."""

@@ -11,6 +11,7 @@ import numpy as np
 
 from . import cuda_dlls
 from .config import COMPUTE_TYPE, Config
+from .streaming import Word
 
 log = logging.getLogger(__name__)
 
@@ -125,23 +126,32 @@ class Transcriber:
         self.model, self.device, self.model_name = model, device, name
         log.info("Modelo %s cargado en %s", name, device)
 
-    def transcribe(self, audio: np.ndarray, prompt: str = "") -> str:
+    def _segments(self, audio: np.ndarray, prompt: str, fast: bool, words: bool):
         if self.model is None:
             raise RuntimeError("modelo no cargado")
         segments, _info = self.model.transcribe(
             audio,
             language=self.cfg.language or None,
-            beam_size=5 if self.device == "cuda" else 2,
+            # En GPU sobra margen: beam search también en vivo. En CPU, las pasadas en vivo son voraces.
+            beam_size=5 if self.device == "cuda" else (1 if fast else 2),
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 400},
             condition_on_previous_text=False,
             initial_prompt=prompt or None,
-            without_timestamps=True,
+            without_timestamps=not words,
+            word_timestamps=words,
         )
-        parts = []
-        for s in segments:
-            # Descarta segmentos que Whisper marca como probablemente sin voz.
-            if s.no_speech_prob > 0.6 and s.avg_logprob < -1.0:
-                continue
-            parts.append(s.text)
-        return "".join(parts)
+        # Descarta segmentos que Whisper marca como probablemente sin voz.
+        return [s for s in segments if not (s.no_speech_prob > 0.6 and s.avg_logprob < -1.0)]
+
+    def transcribe(self, audio: np.ndarray, prompt: str = "") -> str:
+        return "".join(s.text for s in self._segments(audio, prompt, fast=False, words=False))
+
+    def transcribe_words(self, audio: np.ndarray, prompt: str = "") -> list[Word]:
+        """Pasada rápida (en vivo) con marcas de tiempo por palabra."""
+        return [
+            Word(w.word.strip(), w.start, w.end)
+            for s in self._segments(audio, prompt, fast=True, words=True)
+            for w in (s.words or [])
+            if w.word.strip()
+        ]

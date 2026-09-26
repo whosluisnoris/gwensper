@@ -10,7 +10,7 @@ Todo corre en tu computadora: el audio no sale de tu PC.
 
 1. Abre Gwensper. Aparece un pequeño parche flotante y un icono en la bandeja del sistema.
 2. Pon el cursor donde quieras escribir y presiona **Ctrl+Alt+D**.
-3. Habla. Cada vez que haces una pausa, la frase se transcribe y se escribe sola.
+3. Habla. Con GPU, las palabras van apareciendo mientras hablas (1-2 s detrás de tu voz); en CPU, cada frase se escribe al hacer una pausa.
 4. Presiona **Ctrl+Alt+D** otra vez para detener.
 
 El indicador no roba el foco: puedes hacer clic en él para activar o detener el dictado y seguir escribiendo donde estabas. Se puede arrastrar a cualquier parte de la pantalla, y con clic derecho abres el menú.
@@ -57,7 +57,8 @@ Clic derecho en el indicador o en el icono de la bandeja → **Configuración…
 | Modelo | Automático | `small` en CPU y `large-v3-turbo` en GPU. `base` o `tiny` para PCs modestos |
 | Pausa que cierra una frase | 600 ms | Súbela si te corta a mitad de frase |
 | Umbral de voz | 3.0 | Súbelo si el ruido de fondo se transcribe |
-| Cómo escribir | Teclear | «Pegar» usa Ctrl+V y después restaura tu portapapeles |
+| Cómo escribir | Teclear | Palabra por palabra. «Pegar» usa Ctrl+V con la frase completa y después restaura tu portapapeles |
+| Cuándo escribir | Automático | «Mientras hablo» transcribe en vivo (ideal con GPU); «Al terminar cada frase» espera a cada pausa |
 
 La configuración (`config.json`) y el registro (`gwensper.log`) se guardan en `%APPDATA%\Gwensper`. Si usas Python de la Microsoft Store, Windows redirige esa carpeta a `%LOCALAPPDATA%\Packages\PythonSoftwareFoundation.Python…\LocalCache\Roaming\Gwensper`. En cualquier caso, desde el menú de la bandeja → **Abrir carpeta de configuración** llegas directo.
 
@@ -89,6 +90,7 @@ Estructura:
 src/gwensper/
   app.py          orquesta micrófono → frases → Whisper → escritura
   segmenter.py    corta el audio en frases usando las pausas
+  streaming.py    dictado en vivo: confirma las palabras en las que coinciden dos pasadas
   transcriber.py  faster-whisper con GPU o CPU
   typer.py        escribe en la ventana activa (SendInput unicode o pegar)
   overlay.py      indicador flotante
