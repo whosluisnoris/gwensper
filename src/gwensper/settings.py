@@ -61,7 +61,7 @@ class SettingsDialog(QDialog):
         self.sensitivity = QDoubleSpinBox(minimum=1.5, maximum=10.0, singleStep=0.5, decimals=1)
         self.sensitivity.setValue(cfg.sensitivity)
         self.sensitivity.setToolTip("Más alto = ignora más ruido de fondo, pero necesitas hablar más fuerte.")
-        self.insert_mode = _combo([("type", "Teclear (no usa el portapapeles)"), ("paste", "Pegar (Ctrl+V)")],
+        self.insert_mode = _combo([("type", "Teclear palabra por palabra"), ("paste", "Pegar (Ctrl+V), la frase completa de una vez")],
                                   cfg.insert_mode)
 
         form = QFormLayout()

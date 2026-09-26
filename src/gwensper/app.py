@@ -237,11 +237,8 @@ class Controller(QObject):
 
     def _insert_text(self, text: str) -> None:
         piece = postprocess.join(self.context, text)
-        try:
-            self.typer.insert(piece)
-        except OSError:
-            log.exception("No se pudo escribir el texto")
-            return
+        # Se encola y se escribe palabra por palabra; el contexto para Whisper se actualiza ya.
+        self.typer.insert(piece)
         self.context += piece
 
     def _show_idle(self) -> None:
@@ -250,7 +247,7 @@ class Controller(QObject):
     # ---------- visibilidad de la píldora ----------
     def _work_pending(self) -> bool:
         # unfinished_tasks cuenta también la frase que se está transcribiendo ahora.
-        return self.phrases.unfinished_tasks > 0
+        return self.phrases.unfinished_tasks > 0 or self.typer.busy
 
     def _check_finished(self) -> None:
         if self.listening:
