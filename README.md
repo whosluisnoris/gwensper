@@ -59,7 +59,7 @@ Clic derecho en el indicador o en el icono de la bandeja → **Configuración…
 | Umbral de voz | 3.0 | Súbelo si el ruido de fondo se transcribe |
 | Cómo escribir | Teclear | «Pegar» usa Ctrl+V y después restaura tu portapapeles |
 
-La configuración se guarda en `%APPDATA%\Gwensper\config.json` y el registro en `%APPDATA%\Gwensper\gwensper.log`.
+La configuración (`config.json`) y el registro (`gwensper.log`) se guardan en `%APPDATA%\Gwensper`. Si usas Python de la Microsoft Store, Windows redirige esa carpeta a `%LOCALAPPDATA%\Packages\PythonSoftwareFoundation.Python…\LocalCache\Roaming\Gwensper`. En cualquier caso, desde el menú de la bandeja → **Abrir carpeta de configuración** llegas directo.
 
 Desde el menú de la bandeja también puedes activar **Iniciar con Windows**.
 

@@ -13,6 +13,7 @@ class Tray(QSystemTrayIcon):
     settings_requested = Signal()
     overlay_toggled = Signal(bool)
     autostart_toggled = Signal(bool)
+    open_folder_requested = Signal()
     quit_requested = Signal()
 
     def __init__(self, hotkey_label: str, show_overlay: bool, autostart: bool):
@@ -30,6 +31,7 @@ class Tray(QSystemTrayIcon):
         self.act_autostart.toggled.connect(self.autostart_toggled)
         self.menu.addAction(self.act_autostart)
         self.menu.addAction("Configuración…", self.settings_requested)
+        self.menu.addAction("Abrir carpeta de configuración", self.open_folder_requested)
         self.menu.addSeparator()
         self.menu.addAction("Salir", self.quit_requested)
         self.setContextMenu(self.menu)

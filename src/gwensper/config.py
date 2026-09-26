@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -17,7 +18,25 @@ COMPUTE_TYPE = {"cpu": "int8", "cuda": "int8_float16"}
 MODELS = ["tiny", "base", "small", "medium", "large-v3-turbo", "large-v3"]
 
 
+def _store_python_family() -> str | None:
+    """Nombre de familia del paquete si se ejecuta con Python de la Microsoft Store.
+
+    Ej.: sys.prefix = ...\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0
+    -> "PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0".
+    """
+    name = Path(sys.prefix).name
+    if "\\windowsapps\\" not in sys.prefix.lower() or "__" not in name:
+        return None
+    return f"{name.split('_')[0]}_{name.rsplit('__', 1)[1]}"
+
+
 def data_dir() -> Path:
+    # Python de la Store redirige en silencio las escrituras en %APPDATA% a su carpeta
+    # privada; usamos esa ruta física directamente para poder mostrarla y abrirla.
+    family = _store_python_family()
+    local = os.environ.get("LOCALAPPDATA")
+    if family and local:
+        return Path(local) / "Packages" / family / "LocalCache" / "Roaming" / APP_NAME
     base = os.environ.get("APPDATA") or str(Path.home() / ".config")
     return Path(base) / APP_NAME
 

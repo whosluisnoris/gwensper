@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import getpass
 import logging
+import os
 import queue
 import sys
 import threading
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from . import APP_NAME, postprocess, shortcuts, winapi
 from .audio import FileSource, Microphone
-from .config import Config
+from .config import Config, data_dir
 from .hotkey import GlobalHotkey
 from .icon import app_icon
 from .overlay import Overlay
@@ -72,6 +73,7 @@ class Controller(QObject):
         self.tray.settings_requested.connect(self.open_settings)
         self.tray.overlay_toggled.connect(self._set_overlay_visible)
         self.tray.autostart_toggled.connect(self._set_autostart)
+        self.tray.open_folder_requested.connect(self._open_data_dir)
         self.tray.quit_requested.connect(self.quit)
         self.tray.show()
         if cfg.show_overlay:
@@ -286,6 +288,11 @@ class Controller(QObject):
         except Exception as e:  # noqa: BLE001
             log.exception("Autostart")
             self.tray.showMessage(APP_NAME, f"No se pudo cambiar el inicio automático:\n{e}", self.tray.icon())
+
+    def _open_data_dir(self) -> None:
+        folder = data_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        os.startfile(folder)
 
     def show_overlay(self) -> None:
         self.overlay.show()
