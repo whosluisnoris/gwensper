@@ -1,0 +1,147 @@
+"""Carga de faster-whisper (GPU si se puede, si no CPU) y transcripción de frases."""
+from __future__ import annotations
+
+import logging
+import os
+import threading
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
+
+from . import cuda_dlls
+from .config import COMPUTE_TYPE, Config
+
+log = logging.getLogger(__name__)
+
+_ALLOW_PATTERNS = ["config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.*"]
+
+StatusFn = Callable[[str], None]
+ProgressFn = Callable[[int], None]  # 0..100, -1 = indeterminado
+
+
+def _repo_id(model: str) -> str:
+    from faster_whisper.utils import _MODELS
+
+    return model if "/" in model else _MODELS.get(model, model)
+
+
+def _folder_size(path: Path) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def ensure_model(model: str, on_progress: ProgressFn | None = None) -> str:
+    """Devuelve la ruta local del modelo, descargándolo (con progreso) si hace falta."""
+    import huggingface_hub
+    from huggingface_hub import constants
+
+    repo = _repo_id(model)
+    try:
+        return huggingface_hub.snapshot_download(repo, allow_patterns=_ALLOW_PATTERNS, local_files_only=True)
+    except Exception:  # noqa: BLE001 - no está en caché
+        pass
+
+    expected = 0
+    try:
+        info = huggingface_hub.HfApi().model_info(repo, files_metadata=True)
+        from fnmatch import fnmatch
+
+        expected = sum(
+            s.size or 0 for s in info.siblings
+            if any(fnmatch(s.rfilename, p) for p in _ALLOW_PATTERNS)
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("No se pudo obtener el tamaño del modelo %s", repo)
+
+    cache_repo = Path(constants.HF_HUB_CACHE) / f"models--{repo.replace('/', '--')}"
+    done = threading.Event()
+
+    def poll():
+        while not done.wait(0.5):
+            if on_progress:
+                if expected:
+                    on_progress(min(99, int(_folder_size(cache_repo) * 100 / expected)))
+                else:
+                    on_progress(-1)
+
+    poller = threading.Thread(target=poll, daemon=True)
+    poller.start()
+    try:
+        path = huggingface_hub.snapshot_download(repo, allow_patterns=_ALLOW_PATTERNS)
+    finally:
+        done.set()
+    if on_progress:
+        on_progress(100)
+    return path
+
+
+class Transcriber:
+    def __init__(self, cfg: Config):
+        self.cfg = cfg
+        self.model = None
+        self.device = "cpu"
+        self.model_name = ""
+
+    def load(self, on_status: StatusFn | None = None, on_progress: ProgressFn | None = None) -> None:
+        """Carga el modelo. En modo auto intenta GPU y, si falla, usa CPU."""
+        status = on_status or (lambda _m: None)
+        wanted = self.cfg.device
+        if wanted in ("auto", "cuda"):
+            cuda_dlls.register()
+            if cuda_dlls.cuda_device_count() > 0:
+                try:
+                    self._load("cuda", status, on_progress)
+                    return
+                except Exception as e:  # noqa: BLE001
+                    log.warning("GPU no disponible (%s); usando CPU", e)
+                    status("GPU no disponible, usando CPU")
+            elif wanted == "cuda":
+                status("No se encontró GPU NVIDIA, usando CPU")
+        self._load("cpu", status, on_progress)
+
+    def _load(self, device: str, status: StatusFn, on_progress: ProgressFn | None) -> None:
+        from faster_whisper import WhisperModel
+
+        name = self.cfg.model_for(device)
+        status(f"Preparando modelo {name}…")
+        path = ensure_model(name, on_progress)
+        status(f"Cargando {name} en {'GPU' if device == 'cuda' else 'CPU'}…")
+        model = WhisperModel(
+            path,
+            device=device,
+            compute_type=COMPUTE_TYPE[device],
+            cpu_threads=max(1, (os.cpu_count() or 4) - 1) if device == "cpu" else 0,
+        )
+        # Calentamiento: en GPU, aquí aparecen los errores de DLL/memoria.
+        segments, _ = model.transcribe(np.zeros(16000, dtype=np.float32), language="es", beam_size=1)
+        list(segments)
+        self.model, self.device, self.model_name = model, device, name
+        log.info("Modelo %s cargado en %s", name, device)
+
+    def transcribe(self, audio: np.ndarray, prompt: str = "") -> str:
+        if self.model is None:
+            raise RuntimeError("modelo no cargado")
+        segments, _info = self.model.transcribe(
+            audio,
+            language=self.cfg.language or None,
+            beam_size=5 if self.device == "cuda" else 2,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 400},
+            condition_on_previous_text=False,
+            initial_prompt=prompt or None,
+            without_timestamps=True,
+        )
+        parts = []
+        for s in segments:
+            # Descarta segmentos que Whisper marca como probablemente sin voz.
+            if s.no_speech_prob > 0.6 and s.avg_logprob < -1.0:
+                continue
+            parts.append(s.text)
+        return "".join(parts)

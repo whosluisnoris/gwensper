@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gwensper"
+version = "0.1.0"
+description = "Dictado por voz para Windows con Whisper: habla y el texto aparece en la app que tengas activa."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Luis Noris Garcia" }]
+requires-python = ">=3.10"
+keywords = ["whisper", "dictation", "speech-to-text", "voz", "dictado", "windows"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Environment :: Win32 (MS Windows)",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "faster-whisper>=1.1",
+    "PySide6-Essentials>=6.6",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# Aceleración con GPU NVIDIA (opcional). Sin esto, Gwensper funciona en CPU.
+cuda = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]
+dev = ["pytest>=7"]
+
+[project.gui-scripts]
+gwensper = "gwensper.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/whosluisnoris/gwensper"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+gwensper = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
