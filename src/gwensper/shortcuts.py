@@ -89,6 +89,7 @@ def autostart_enabled() -> bool:
 
 def set_autostart(enabled: bool) -> None:
     if enabled:
-        create_shortcut(startup_link())
+        # Al iniciar Windows arranca en la bandeja, sin abrir la ventana.
+        create_shortcut(startup_link(), "--background")
     else:
         startup_link().unlink(missing_ok=True)

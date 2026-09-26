@@ -61,6 +61,7 @@ class Config:
     overlay_x: int | None = None
     overlay_y: int | None = None
     first_run_done: bool = False
+    window_hint_shown: bool = False
 
     def model_for(self, device: str) -> str:
         return self.model or DEFAULT_MODEL[device]

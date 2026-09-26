@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def main(out: Path) -> None:
-    app = QApplication([])  # noqa: F841 - necesario para dibujar widgets
+    app = QApplication([])  # necesario para dibujar widgets
     from gwensper import fonts
     from gwensper.overlay import Overlay
 
@@ -51,6 +51,7 @@ def main(out: Path) -> None:
     p.end()
     out.parent.mkdir(parents=True, exist_ok=True)
     out_pm.save(str(out))
+    app.processEvents()
     print("Guardado", out)
 
 

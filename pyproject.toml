@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gwensper"
-version = "0.1.0"
+version = "0.2.0"
 description = "Dictado por voz para Windows con Whisper: habla y el texto aparece en la app que tengas activa."
 readme = "README.md"
 license = "MIT"

@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--install-shortcut", action="store_true", help="crear acceso directo en el menú Inicio")
     parser.add_argument("--uninstall-shortcut", action="store_true", help="quitar accesos directos")
     parser.add_argument("--test-audio", metavar="ARCHIVO", help="usar un archivo de audio en lugar del micrófono")
+    parser.add_argument("--background", action="store_true", help="iniciar en la bandeja, sin la ventana")
     parser.add_argument("--verbose", action="store_true", help="registro detallado")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
     args = parser.parse_args(argv)
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     _ensure_std_streams()
     from .app import run
 
-    return run(test_audio=args.test_audio)
+    return run(test_audio=args.test_audio, background=args.background)
 
 
 if __name__ == "__main__":

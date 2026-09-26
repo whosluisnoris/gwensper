@@ -15,13 +15,13 @@ from .streaming import Word
 
 log = logging.getLogger(__name__)
 
-_ALLOW_PATTERNS = ["config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.*"]
+ALLOW_PATTERNS = ["config.json", "preprocessor_config.json", "model.bin", "tokenizer.json", "vocabulary.*"]
 
 StatusFn = Callable[[str], None]
 ProgressFn = Callable[[int], None]  # 0..100, -1 = indeterminado
 
 
-def _repo_id(model: str) -> str:
+def repo_id(model: str) -> str:
     from faster_whisper.utils import _MODELS
 
     return model if "/" in model else _MODELS.get(model, model)
@@ -31,8 +31,12 @@ def _folder_size(path: Path) -> int:
     total = 0
     for root, _dirs, files in os.walk(path):
         for f in files:
+            path = os.path.join(root, f)
+            # Solo archivos reales: los enlaces apuntan a blobs ya contados (o compartidos).
+            if os.path.islink(path):
+                continue
             try:
-                total += os.path.getsize(os.path.join(root, f))
+                total += os.path.getsize(path)
             except OSError:
                 pass
     return total
@@ -43,9 +47,9 @@ def ensure_model(model: str, on_progress: ProgressFn | None = None) -> str:
     import huggingface_hub
     from huggingface_hub import constants
 
-    repo = _repo_id(model)
+    repo = repo_id(model)
     try:
-        return huggingface_hub.snapshot_download(repo, allow_patterns=_ALLOW_PATTERNS, local_files_only=True)
+        return huggingface_hub.snapshot_download(repo, allow_patterns=ALLOW_PATTERNS, local_files_only=True)
     except Exception:  # noqa: BLE001 - no está en caché
         pass
 
@@ -56,7 +60,7 @@ def ensure_model(model: str, on_progress: ProgressFn | None = None) -> str:
 
         expected = sum(
             s.size or 0 for s in info.siblings
-            if any(fnmatch(s.rfilename, p) for p in _ALLOW_PATTERNS)
+            if any(fnmatch(s.rfilename, p) for p in ALLOW_PATTERNS)
         )
     except Exception:  # noqa: BLE001
         log.warning("No se pudo obtener el tamaño del modelo %s", repo)
@@ -75,7 +79,7 @@ def ensure_model(model: str, on_progress: ProgressFn | None = None) -> str:
     poller = threading.Thread(target=poll, daemon=True)
     poller.start()
     try:
-        path = huggingface_hub.snapshot_download(repo, allow_patterns=_ALLOW_PATTERNS)
+        path = huggingface_hub.snapshot_download(repo, allow_patterns=ALLOW_PATTERNS)
     finally:
         done.set()
     if on_progress:

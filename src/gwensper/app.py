@@ -1,6 +1,7 @@
 """Controlador principal: une micrófono, segmentador, Whisper, escritura e interfaz."""
 from __future__ import annotations
 
+import dataclasses
 import getpass
 import logging
 import os
@@ -13,7 +14,7 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from . import APP_NAME, fonts, postprocess, shortcuts, winapi
+from . import APP_NAME, fonts, models, postprocess, shortcuts, winapi
 from .audio import FileSource, Microphone
 from .config import Config, data_dir
 from .hotkey import GlobalHotkey
@@ -21,7 +22,6 @@ from .icon import app_icon
 from .overlay import Overlay
 from .segmenter import Segmenter
 from .streaming import LiveTranscript, Word
-from .settings import SettingsDialog
 from .transcriber import Transcriber
 from .tray import Tray
 from .typer import Typer
@@ -43,6 +43,8 @@ class Signals(QObject):
     busy = Signal(bool)
     text = Signal(str)
     source_finished = Signal()
+    dl_progress = Signal(str, int)
+    dl_done = Signal(str, bool, str)
 
 
 class Controller(QObject):
@@ -66,6 +68,9 @@ class Controller(QObject):
         self.live: dict[int, LiveTranscript] = {}  # frases en curso transcritas en vivo
         self._audio_thread: threading.Thread | None = None
         self._stop_audio = threading.Event()
+        self.status_text = "Iniciando"
+        self.downloads: dict[str, int] = {}  # modelo -> % de descarga (-1 = sin porcentaje)
+        self.window = None
 
         # Interfaz
         self.overlay = Overlay()
@@ -73,12 +78,13 @@ class Controller(QObject):
         self.overlay.moved.connect(self._save_overlay_pos)
         self.overlay.context_requested.connect(lambda pos: self.tray.menu.popup(pos))
         self.overlay.place(cfg.overlay_x, cfg.overlay_y)
-        self.tray = Tray(self._hotkey_label(), cfg.overlay_always, shortcuts.autostart_enabled())
+        self.tray = Tray(self.hotkey_label(), cfg.overlay_always, shortcuts.autostart_enabled())
         self.tray.toggle_requested.connect(self.toggle)
-        self.tray.settings_requested.connect(self.open_settings)
-        self.tray.overlay_toggled.connect(self._set_overlay_always)
-        self.tray.autostart_toggled.connect(self._set_autostart)
-        self.tray.open_folder_requested.connect(self._open_data_dir)
+        self.tray.open_requested.connect(self.open_window)
+        self.tray.settings_requested.connect(self.open_window)
+        self.tray.overlay_toggled.connect(self.set_overlay_always)
+        self.tray.autostart_toggled.connect(self.set_autostart)
+        self.tray.open_folder_requested.connect(self.open_data_dir)
         self.tray.quit_requested.connect(self.quit)
         self.tray.show()
         if cfg.overlay_always:
@@ -97,6 +103,8 @@ class Controller(QObject):
         self.sig.busy.connect(self.overlay.set_busy)
         self.sig.text.connect(self._insert_text, Qt.QueuedConnection)
         self.sig.source_finished.connect(self.stop)
+        self.sig.dl_progress.connect(self._on_download_progress)
+        self.sig.dl_done.connect(self._on_download_done)
 
         threading.Thread(target=self._transcribe_loop, daemon=True, name="transcribe").start()
         self.load_model()
@@ -118,12 +126,16 @@ class Controller(QObject):
                 self.sig.model_loaded.emit(False, str(e))
 
     def _on_status(self, text: str) -> None:
+        self.status_text = text
         self.tray.set_status(text)
+        self._refresh_window()
         if not self.ready:
             self.overlay.set_state("loading", text)
 
     def _on_model_loaded(self, ok: bool, detail: str) -> None:
         self.ready = ok
+        self.status_text = detail if ok else "No se pudo cargar el modelo"
+        self._refresh_window()
         if not ok:
             self.pending_start = False
             self.overlay.set_state("error", "No se pudo cargar el modelo")
@@ -306,7 +318,7 @@ class Controller(QObject):
         self.context += piece
 
     def _show_idle(self) -> None:
-        self.overlay.set_state("idle", f"{self._hotkey_label()} para dictar")
+        self.overlay.set_state("idle", f"{self.hotkey_label()} para dictar")
 
     # ---------- visibilidad de la píldora ----------
     def _work_pending(self) -> bool:
@@ -336,7 +348,7 @@ class Controller(QObject):
         self.overlay.disappear()
 
     # ---------- configuración ----------
-    def _hotkey_label(self) -> str:
+    def hotkey_label(self) -> str:
         return "+".join(p.capitalize() if len(p) > 1 else p.upper() for p in self.cfg.hotkey.split("+"))
 
     def _register_hotkey(self, notify: bool) -> None:
@@ -344,30 +356,27 @@ class Controller(QObject):
         if not ok and notify:
             self.tray.showMessage(
                 APP_NAME,
-                f"El atajo {self._hotkey_label()} está en uso por otra app. Cámbialo en Configuración.",
+                f"El atajo {self.hotkey_label()} está en uso por otra app. Cámbialo en Configuración.",
                 self.tray.icon(),
             )
 
-    def open_settings(self) -> None:
-        status = self.tray.toolTip().replace("Gwensper — ", "Estado: ")
-        dlg = SettingsDialog(self.cfg, status)
-        dlg.activateWindow()
-        if dlg.exec() != SettingsDialog.Accepted:
-            return
-        new, old = dlg.cfg, self.cfg
+    def apply_changes(self, **changes) -> None:
+        """Aplica y guarda cambios de configuración al momento (desde la ventana principal)."""
+        old = dataclasses.replace(self.cfg)
+        for key, value in changes.items():
+            setattr(self.cfg, key, value)
+        new = self.cfg
+        new.save()
         reload_model = (new.model, new.device) != (old.model, old.device)
         restart_audio = self.listening and (
             (new.input_device, new.silence_ms, new.sensitivity) != (old.input_device, old.silence_ms, old.sensitivity)
             or reload_model
         )
-        for f in ("hotkey", "language", "device", "model", "input_device", "silence_ms", "sensitivity",
-                  "insert_mode", "live_mode"):
-            setattr(self.cfg, f, getattr(new, f))
-        self.cfg.save()
-        self.typer.mode = self.cfg.insert_mode
-        self.tray.hotkey_label = self._hotkey_label()
-        self.tray.set_listening(self.listening)
-        self._register_hotkey(notify=True)
+        self.typer.mode = new.insert_mode
+        if new.hotkey != old.hotkey:
+            self.tray.hotkey_label = self.hotkey_label()
+            self.tray.set_listening(self.listening)
+            self._register_hotkey(notify=True)
         if restart_audio:
             self.stop()
         if reload_model:
@@ -376,35 +385,124 @@ class Controller(QObject):
             self.start()
         elif not self.listening and self.ready:
             self._show_idle()
+        self._refresh_window()
+
+    # ---------- modelos ----------
+    def use_model(self, name: str) -> None:
+        """`name` vacío = elegir automáticamente según CPU/GPU."""
+        self.apply_changes(model=name)
+
+    def download_model(self, name: str) -> None:
+        if name in self.downloads:
+            return
+        self.downloads[name] = -1
+        self._refresh_window()
+
+        def work():
+            try:
+                models.download(name, lambda pct: self.sig.dl_progress.emit(name, pct))
+                self.sig.dl_done.emit(name, True, "")
+            except Exception as e:  # noqa: BLE001
+                log.exception("Error descargando %s", name)
+                self.sig.dl_done.emit(name, False, str(e))
+
+        threading.Thread(target=work, daemon=True, name=f"download-{name}").start()
+
+    def _on_download_progress(self, name: str, pct: int) -> None:
+        if name in self.downloads:
+            self.downloads[name] = pct
+            if self.window is not None:
+                self.window.models.update_progress(name, pct)
+
+    def _on_download_done(self, name: str, ok: bool, error: str) -> None:
+        self.downloads.pop(name, None)
+        if not ok:
+            QMessageBox.warning(self.window, APP_NAME, f"No se pudo descargar {name}:\n{error}")
+        self._refresh_window()
+
+    def delete_model(self, name: str) -> None:
+        if self.ready and self.transcriber.model_name == name:
+            return  # la interfaz no lo permite: es el modelo en uso
+        info = models.BY_NAME.get(name)
+        answer = QMessageBox.question(
+            self.window, APP_NAME,
+            f"¿Eliminar el modelo {info.title if info else name}? Podrás volver a descargarlo cuando quieras.",
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            models.delete(name)
+        except Exception as e:  # noqa: BLE001
+            log.exception("Error eliminando %s", name)
+            QMessageBox.warning(self.window, APP_NAME, f"No se pudo eliminar {name}:\n{e}")
+        self._refresh_window()
+
+    # ---------- ventana principal ----------
+    def open_window(self, page: str | None = None) -> None:
+        from .window import MainWindow
+
+        if self.window is None:
+            self.window = MainWindow(self)
+        if page:
+            self.window.show_page(page)
+        self.window.refresh()
+        self.window.showNormal()
+        self.window.raise_()
+        self.window.activateWindow()
+
+    def window_closed(self) -> None:
+        if not self.cfg.window_hint_shown:
+            self.cfg.window_hint_shown = True
+            self.cfg.save()
+            self.tray.showMessage(
+                APP_NAME,
+                f"Gwensper sigue en la bandeja. Presiona {self.hotkey_label()} para dictar; "
+                "haz clic en el icono para volver a abrir esta ventana.",
+                self.tray.icon(), 6000,
+            )
+
+    def _refresh_window(self) -> None:
+        if self.window is not None and self.window.isVisible():
+            self.window.refresh()
 
     def _save_overlay_pos(self, x: int, y: int) -> None:
         self.cfg.overlay_x, self.cfg.overlay_y = x, y
         self.cfg.save()
 
-    def _set_overlay_always(self, always: bool) -> None:
+    def set_overlay_always(self, always: bool) -> None:
         self.cfg.overlay_always = always
         self.cfg.save()
+        self.tray.act_overlay.blockSignals(True)
+        self.tray.act_overlay.setChecked(always)
+        self.tray.act_overlay.blockSignals(False)
+        self._refresh_window()
         if always:
             self.overlay.appear()
         else:
             self._hide_if_inactive()
 
-    def _set_autostart(self, enabled: bool) -> None:
+    def autostart_enabled(self) -> bool:
+        return shortcuts.autostart_enabled()
+
+    def set_autostart(self, enabled: bool) -> None:
         try:
             shortcuts.set_autostart(enabled)
         except Exception as e:  # noqa: BLE001
             log.exception("Autostart")
             self.tray.showMessage(APP_NAME, f"No se pudo cambiar el inicio automático:\n{e}", self.tray.icon())
+        self.tray.act_autostart.blockSignals(True)
+        self.tray.act_autostart.setChecked(self.autostart_enabled())
+        self.tray.act_autostart.blockSignals(False)
+        self._refresh_window()
 
-    def _open_data_dir(self) -> None:
+    def open_data_dir(self) -> None:
         folder = data_dir()
         folder.mkdir(parents=True, exist_ok=True)
         os.startfile(folder)
 
-    def show_overlay(self) -> None:
-        """Otra instancia pidió mostrarse: enseña la píldora un momento."""
-        if not self.listening:
-            self._flash(2500)
+    def show_requested(self) -> None:
+        """Se volvió a abrir Gwensper (menú Inicio o comando): muestra la ventana."""
+        self.open_window()
 
     def _quit_when_idle(self) -> None:
         if not self._work_pending():
@@ -428,16 +526,9 @@ def _first_run(ctrl: Controller, cfg: Config) -> None:
         log.exception("No se pudo crear el acceso directo del menú Inicio")
     cfg.first_run_done = True
     cfg.save()
-    ctrl.tray.showMessage(
-        APP_NAME,
-        f"Gwensper está en la bandeja. Presiona {ctrl._hotkey_label()} para empezar a dictar "
-        "y otra vez para detener.",
-        ctrl.tray.icon(),
-        8000,
-    )
 
 
-def run(test_audio: str | None = None) -> int:
+def run(test_audio: str | None = None, background: bool = False) -> int:
     winapi.set_app_user_model_id("Gwensper.Dictado")
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
@@ -446,7 +537,7 @@ def run(test_audio: str | None = None) -> int:
     fonts.load()
     app.setQuitOnLastWindowClosed(False)
 
-    # Instancia única: si ya está abierta, solo muestra el indicador.
+    # Instancia única: si ya está abierta, le pide mostrar su ventana.
     probe = QLocalSocket()
     probe.connectToServer(SERVER_NAME)
     if probe.waitForConnected(300):
@@ -468,10 +559,12 @@ def run(test_audio: str | None = None) -> int:
     def on_connection():
         sock = server.nextPendingConnection()
         if sock is not None:
-            sock.readyRead.connect(ctrl.show_overlay)
+            sock.readyRead.connect(ctrl.show_requested)
             sock.disconnected.connect(sock.deleteLater)
 
     server.newConnection.connect(on_connection)
     if not test_audio:
         QTimer.singleShot(500, lambda: _first_run(ctrl, cfg))
+        if not background:
+            ctrl.open_window()
     return app.exec()

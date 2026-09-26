@@ -10,6 +10,7 @@ from .icon import app_icon
 
 class Tray(QSystemTrayIcon):
     toggle_requested = Signal()
+    open_requested = Signal()
     settings_requested = Signal()
     overlay_toggled = Signal(bool)
     autostart_toggled = Signal(bool)
@@ -19,6 +20,7 @@ class Tray(QSystemTrayIcon):
     def __init__(self, hotkey_label: str, overlay_always: bool, autostart: bool):
         super().__init__(app_icon())
         self.menu = QMenu()
+        self.menu.addAction("Abrir Gwensper", self.open_requested)
         self.act_toggle = QAction(self.menu)
         self.act_toggle.triggered.connect(self.toggle_requested)
         self.menu.addAction(self.act_toggle)
@@ -50,4 +52,4 @@ class Tray(QSystemTrayIcon):
 
     def _on_activated(self, reason) -> None:
         if reason == QSystemTrayIcon.Trigger:
-            self.toggle_requested.emit()
+            self.open_requested.emit()
