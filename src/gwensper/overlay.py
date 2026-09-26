@@ -35,6 +35,7 @@ SCISSORS_W = 30
 
 GOLD_THREAD = QColor("#E4C57A")
 RIBBON_ROSE = QColor("#E8798E")
+STEEL = QColor("#C3CAD6")  # hojas de las tijeras
 
 BUTTON_COLOR = {"idle": GWEN_BLUE, "loading": GOLD_THREAD, "listening": MIST, "error": RIBBON_ROSE}
 
@@ -56,24 +57,24 @@ def _animations_enabled() -> bool:
     return True
 
 
-def draw_scissors(p: QPainter, center: QPointF, size: float, opening_deg: float, color: QColor) -> None:
-    """Tijeras vistas de lado; cada hoja es una palanca que gira sobre el pivote."""
+def draw_scissors(p: QPainter, center: QPointF, size: float, opening_deg: float) -> None:
+    """Tijeras sencillas vistas de lado: hojas de metal gris y mangos del azul del micrófono."""
     for sign in (1, -1):
         p.save()
         p.translate(center)
         p.rotate(sign * opening_deg)
         p.setPen(Qt.NoPen)
-        p.setBrush(PORCELAIN)
-        blade = QPolygonF([QPointF(0, -1.3 * sign), QPointF(size * 0.55, 0), QPointF(0, 1.0 * sign)])
+        p.setBrush(STEEL)
+        blade = QPolygonF([QPointF(0, -1.2 * sign), QPointF(size * 0.55, 0), QPointF(0, 0.9 * sign)])
         p.drawPolygon(blade)
-        p.setPen(QPen(color, 1.6))
+        p.setPen(QPen(GWEN_BLUE, 1.7))
         p.setBrush(Qt.NoBrush)
         r = size * 0.15
         p.drawEllipse(QPointF(-size * 0.32, 0), r, r)
         p.restore()
     p.setPen(Qt.NoPen)
-    p.setBrush(color)
-    p.drawEllipse(center, 1.4, 1.4)
+    p.setBrush(STEEL.darker(140))
+    p.drawEllipse(center, 1.3, 1.3)
 
 
 class Overlay(QWidget):
@@ -101,6 +102,7 @@ class Overlay(QWidget):
         self._phase = 0.0
         self._stitch_offset = 0.0
         self._stitch_speed = 0.0
+        self._snip_phase = 0.0
         self._thread_cache: tuple[int, tuple[float, int]] = (-1, (0.0, 1))
         self._press: QPoint | None = None
         self._origin = QPoint()
@@ -190,6 +192,8 @@ class Overlay(QWidget):
             target = 0.12 + 1.5 * self.level
             self._stitch_speed += 0.15 * (target - self._stitch_speed)
             self._stitch_offset -= self._stitch_speed
+            # Las tijeras cortan despacio mientras escuchas y más rápido al procesar una frase.
+            self._snip_phase += 0.22 if self.busy else 0.07
         else:
             self.level *= 0.8
         if self.state in ("listening", "loading") or self.busy:
@@ -302,10 +306,10 @@ class Overlay(QWidget):
         p.drawText(QRectF(TEXT_X, 0, self.width() - TEXT_X - self._extra_width(), HEIGHT - 1),
                    Qt.AlignVCenter, self.text)
 
-        if self.state == "listening" and self.busy:
-            snip = abs(math.sin(self._phase * 1.6)) if self.animate else 0.6
+        if self.state == "listening":
+            snip = abs(math.sin(self._snip_phase)) if self.animate else 0.5
             center = QPointF(self.width() - SCISSORS_W / 2 - 10, HEIGHT / 2)
-            draw_scissors(p, center, 21, 6 + 22 * snip, GOLD_THREAD)
+            draw_scissors(p, center, 21, 5 + 20 * snip)
         p.end()
 
     # ---------- interacción ----------

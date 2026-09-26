@@ -28,8 +28,8 @@ def main(out: Path) -> None:
     states = [
         ("Listo", lambda o: o.set_state("idle", "Ctrl+Alt+D para dictar")),
         ("Escuchando", lambda o: (o.set_state("listening", "Escuchando"), setattr(o, "level", 0.8))),
-        ("Escribiendo lo dictado", lambda o: (o.set_state("listening", "Escuchando"),
-                                              setattr(o, "level", 0.3), o.set_busy(True))),
+        ("Procesando una frase", lambda o: (o.set_state("listening", "Escuchando"),
+                                            setattr(o, "level", 0.3), o.set_busy(True))),
         ("Descargando el modelo", lambda o: (o.set_state("loading", ""), o.set_progress(62))),
         ("Error", lambda o: o.set_state("error", "Micrófono no disponible")),
     ]
