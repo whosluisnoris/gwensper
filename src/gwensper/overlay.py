@@ -13,7 +13,7 @@ from __future__ import annotations
 import ctypes
 import math
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QGuiApplication, QLinearGradient, QPainter, QPainterPath, QPen,
     QPolygonF, QRadialGradient,
@@ -108,6 +108,9 @@ class Overlay(QWidget):
 
         self._timer = QTimer(self, interval=33, timeout=self._tick)
         self._timer.start()
+        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade.setDuration(160)
+        self._fade.finished.connect(self._on_fade_done)
         self._relayout()
 
     # ---------- API ----------
@@ -131,6 +134,33 @@ class Overlay(QWidget):
             self.text = f"Descargando modelo, {pct} %"
         self._relayout()
         self.update()
+
+    def appear(self) -> None:
+        """Muestra la píldora con un fundido corto (sin robar el foco)."""
+        self._fade.stop()
+        if not self.isVisible():
+            self.setWindowOpacity(0.0 if self.animate else 1.0)
+            self.show()
+        if self.animate:
+            self._fade.setStartValue(self.windowOpacity())
+            self._fade.setEndValue(1.0)
+            self._fade.start()
+
+    def disappear(self) -> None:
+        if not self.isVisible():
+            return
+        self._fade.stop()
+        if not self.animate:
+            self.hide()
+            return
+        self._fade.setStartValue(self.windowOpacity())
+        self._fade.setEndValue(0.0)
+        self._fade.start()
+
+    def _on_fade_done(self) -> None:
+        if self.windowOpacity() < 0.01:
+            self.hide()
+            self.setWindowOpacity(1.0)
 
     def place(self, x: int | None, y: int | None) -> None:
         screen = QGuiApplication.primaryScreen().availableGeometry()
@@ -244,7 +274,8 @@ class Overlay(QWidget):
         p.drawEllipse(c)
         draw_mic(p, c.adjusted(7.5, 6, -7.5, -6), INK_BOTTOM)
 
-        if self.state == "loading" and self.progress < 0:
+        # Girando: cargando sin porcentaje, o terminando de escribir tras detener.
+        if (self.state == "loading" and self.progress < 0) or (self.state == "idle" and self.busy):
             spin = QPen(GOLD_THREAD, 2, Qt.SolidLine, Qt.RoundCap)
             p.setPen(spin)
             p.setBrush(Qt.NoBrush)

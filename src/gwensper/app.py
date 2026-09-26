@@ -68,16 +68,18 @@ class Controller(QObject):
         self.overlay.moved.connect(self._save_overlay_pos)
         self.overlay.context_requested.connect(lambda pos: self.tray.menu.popup(pos))
         self.overlay.place(cfg.overlay_x, cfg.overlay_y)
-        self.tray = Tray(self._hotkey_label(), cfg.show_overlay, shortcuts.autostart_enabled())
+        self.tray = Tray(self._hotkey_label(), cfg.overlay_always, shortcuts.autostart_enabled())
         self.tray.toggle_requested.connect(self.toggle)
         self.tray.settings_requested.connect(self.open_settings)
-        self.tray.overlay_toggled.connect(self._set_overlay_visible)
+        self.tray.overlay_toggled.connect(self._set_overlay_always)
         self.tray.autostart_toggled.connect(self._set_autostart)
         self.tray.open_folder_requested.connect(self._open_data_dir)
         self.tray.quit_requested.connect(self.quit)
         self.tray.show()
-        if cfg.show_overlay:
+        if cfg.overlay_always:
             self.overlay.show()
+        self._flash_timer = QTimer(self, singleShot=True, timeout=self._hide_if_inactive)
+        self._finish_timer = QTimer(self, interval=150, timeout=self._check_finished)
 
         self.hotkey = GlobalHotkey(lambda: QTimer.singleShot(0, self.toggle))
         self._register_hotkey(notify=True)
@@ -118,7 +120,9 @@ class Controller(QObject):
     def _on_model_loaded(self, ok: bool, detail: str) -> None:
         self.ready = ok
         if not ok:
+            self.pending_start = False
             self.overlay.set_state("error", "No se pudo cargar el modelo")
+            self._flash(4000)
             self.tray.set_status(f"Error: {detail}")
             self.tray.showMessage(APP_NAME, f"No se pudo cargar el modelo:\n{detail}", self.tray.icon())
             return
@@ -127,6 +131,8 @@ class Controller(QObject):
         if self.pending_start or self.test_audio:
             self.pending_start = False
             self.start()
+        else:
+            self._hide_if_inactive()
 
     # ---------- dictado ----------
     def toggle(self) -> None:
@@ -135,10 +141,12 @@ class Controller(QObject):
         elif self.ready:
             self.start()
         else:
+            # El modelo aún carga: la píldora muestra el progreso y el dictado empieza al terminar.
             self.pending_start = not self.pending_start
             if self.pending_start:
-                self.tray.showMessage(APP_NAME, "El modelo se está cargando; el dictado empezará al terminar.",
-                                      self.tray.icon(), 2500)
+                self.overlay.appear()
+            else:
+                self._hide_if_inactive()
 
     def start(self) -> None:
         if self.listening or not self.ready:
@@ -150,6 +158,7 @@ class Controller(QObject):
         except Exception as e:  # noqa: BLE001
             log.exception("No se pudo abrir el micrófono")
             self.overlay.set_state("error", "Micrófono no disponible")
+            self._flash(3000)
             self.tray.showMessage(APP_NAME, f"No se pudo abrir el micrófono:\n{e}", self.tray.icon())
             return
         self.source = source
@@ -163,7 +172,10 @@ class Controller(QObject):
         )
         self._audio_thread.start()
         self.listening = True
+        self._flash_timer.stop()
+        self._finish_timer.stop()
         self.overlay.set_state("listening", "Escuchando")
+        self.overlay.appear()
         self.tray.set_listening(True)
 
     def stop(self) -> None:
@@ -180,8 +192,11 @@ class Controller(QObject):
             if tail is not None:
                 self.phrases.put(tail)
         self.source = None
-        self._show_idle()
         self.tray.set_listening(False)
+        # La píldora sigue visible hasta que se escriba la última frase.
+        self.overlay.set_state("idle", "Terminando")
+        self._finish_timer.start()
+        self._check_finished()
         if self.test_audio:
             # En modo prueba, cierra cuando termine de transcribir.
             QTimer.singleShot(0, self._quit_when_idle)
@@ -216,6 +231,7 @@ class Controller(QObject):
             except Exception:  # noqa: BLE001
                 log.exception("Error transcribiendo")
             finally:
+                self.phrases.task_done()
                 if self.phrases.empty():
                     self.sig.busy.emit(False)
 
@@ -230,6 +246,33 @@ class Controller(QObject):
 
     def _show_idle(self) -> None:
         self.overlay.set_state("idle", f"{self._hotkey_label()} para dictar")
+
+    # ---------- visibilidad de la píldora ----------
+    def _work_pending(self) -> bool:
+        # unfinished_tasks cuenta también la frase que se está transcribiendo ahora.
+        return self.phrases.unfinished_tasks > 0
+
+    def _check_finished(self) -> None:
+        if self.listening:
+            self._finish_timer.stop()
+            return
+        if self._work_pending():
+            return
+        self._finish_timer.stop()
+        self._show_idle()
+        self._hide_if_inactive()
+
+    def _flash(self, ms: int) -> None:
+        """Muestra la píldora un momento (errores, avisos) y luego la oculta."""
+        self.overlay.appear()
+        self._flash_timer.start(ms)
+
+    def _hide_if_inactive(self) -> None:
+        if self.listening or self.pending_start or self.cfg.overlay_always:
+            return
+        if self._flash_timer.isActive() or self._finish_timer.isActive():
+            return
+        self.overlay.disappear()
 
     # ---------- configuración ----------
     def _hotkey_label(self) -> str:
@@ -277,10 +320,13 @@ class Controller(QObject):
         self.cfg.overlay_x, self.cfg.overlay_y = x, y
         self.cfg.save()
 
-    def _set_overlay_visible(self, visible: bool) -> None:
-        self.cfg.show_overlay = visible
+    def _set_overlay_always(self, always: bool) -> None:
+        self.cfg.overlay_always = always
         self.cfg.save()
-        self.overlay.setVisible(visible)
+        if always:
+            self.overlay.appear()
+        else:
+            self._hide_if_inactive()
 
     def _set_autostart(self, enabled: bool) -> None:
         try:
@@ -295,12 +341,12 @@ class Controller(QObject):
         os.startfile(folder)
 
     def show_overlay(self) -> None:
-        self.overlay.show()
-        self.overlay.raise_()
-        self.tray.act_overlay.setChecked(True)
+        """Otra instancia pidió mostrarse: enseña la píldora un momento."""
+        if not self.listening:
+            self._flash(2500)
 
     def _quit_when_idle(self) -> None:
-        if self.phrases.empty() and not self.overlay.busy:
+        if not self._work_pending():
             QTimer.singleShot(500, self.quit)
         else:
             QTimer.singleShot(200, self._quit_when_idle)

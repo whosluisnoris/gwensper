@@ -56,7 +56,7 @@ class Config:
     max_phrase_s: float = 20.0    # corta frases muy largas
     sensitivity: float = 3.0      # umbral de voz = ruido de fondo x sensibilidad
     insert_mode: str = "type"     # type | paste
-    show_overlay: bool = True
+    overlay_always: bool = False  # False = la píldora solo aparece mientras dictas
     overlay_x: int | None = None
     overlay_y: int | None = None
     first_run_done: bool = False

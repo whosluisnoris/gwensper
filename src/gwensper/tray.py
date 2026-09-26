@@ -16,7 +16,7 @@ class Tray(QSystemTrayIcon):
     open_folder_requested = Signal()
     quit_requested = Signal()
 
-    def __init__(self, hotkey_label: str, show_overlay: bool, autostart: bool):
+    def __init__(self, hotkey_label: str, overlay_always: bool, autostart: bool):
         super().__init__(app_icon())
         self.menu = QMenu()
         self.act_toggle = QAction(self.menu)
@@ -24,7 +24,8 @@ class Tray(QSystemTrayIcon):
         self.menu.addAction(self.act_toggle)
         self.menu.addSeparator()
 
-        self.act_overlay = QAction("Mostrar indicador flotante", self.menu, checkable=True, checked=show_overlay)
+        self.act_overlay = QAction("Mostrar siempre el indicador", self.menu, checkable=True,
+                                   checked=overlay_always)
         self.act_overlay.toggled.connect(self.overlay_toggled)
         self.menu.addAction(self.act_overlay)
         self.act_autostart = QAction("Iniciar con Windows", self.menu, checkable=True, checked=autostart)
