@@ -351,7 +351,18 @@ class Controller(QObject):
     def hotkey_label(self) -> str:
         return "+".join(p.capitalize() if len(p) > 1 else p.upper() for p in self.cfg.hotkey.split("+"))
 
+    def suspend_hotkey(self) -> None:
+        """Pausa el atajo global mientras se captura uno nuevo en la ventana."""
+        self._hotkey_suspended = True
+        self.hotkey.unregister()
+
+    def resume_hotkey(self) -> None:
+        self._hotkey_suspended = False
+        self._register_hotkey(notify=True)
+
     def _register_hotkey(self, notify: bool) -> None:
+        if getattr(self, "_hotkey_suspended", False):
+            return  # se registra al terminar la captura (resume_hotkey)
         ok = self.hotkey.register(int(self.overlay.winId()), self.cfg.hotkey)
         if not ok and notify:
             self.tray.showMessage(

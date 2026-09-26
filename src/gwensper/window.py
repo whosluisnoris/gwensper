@@ -219,6 +219,10 @@ class HotkeyEdit(QLineEdit):
     """Haz clic y presiona la combinación: se guarda como 'ctrl+alt+d'."""
 
     hotkey_changed = Signal(str)
+    # Mientras se captura, el atajo global se pausa: si no, Windows se lo entrega a
+    # Gwensper (y enciende el micrófono) antes de que llegue a este campo.
+    capture_started = Signal()
+    capture_finished = Signal()
 
     def __init__(self, spec: str):
         super().__init__()
@@ -232,11 +236,13 @@ class HotkeyEdit(QLineEdit):
 
     def focusInEvent(self, e):
         super().focusInEvent(e)
+        self.capture_started.emit()
         self.setText("Presiona la combinación…")
 
     def focusOutEvent(self, e):
         super().focusOutEvent(e)
         self._show(self.spec)
+        self.capture_finished.emit()
 
     def keyPressEvent(self, e):
         key = e.key()
@@ -335,6 +341,8 @@ class DictationPage(QWidget):
         self.hotkey = HotkeyEdit(cfg.hotkey)
         self.hotkey.setMinimumWidth(240)
         self.hotkey.hotkey_changed.connect(lambda v: ctrl.apply_changes(hotkey=v))
+        self.hotkey.capture_started.connect(ctrl.suspend_hotkey)
+        self.hotkey.capture_finished.connect(ctrl.resume_hotkey)
         mics = list_input_devices()
         if cfg.input_device and cfg.input_device not in mics:
             mics.append(cfg.input_device)
