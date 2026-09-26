@@ -21,12 +21,17 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget
 
 from . import winapi
+from .fonts import ui_font
 from .icon import GWEN_BLUE, INK_BOTTOM, INK_TOP, MIST, PORCELAIN, draw_mic
 
-HEIGHT = 42
-BUTTON = 30
-PAD = 6
-SCISSORS_W = 30
+HEIGHT = 52
+BUTTON = 32
+STITCH_INSET = 5.0
+# El botón es concéntrico con el arco izquierdo de la costura: queda un margen parejo
+# de (HEIGHT/2 - STITCH_INSET) - BUTTON/2 = 5 px entre el botón y las puntadas.
+BUTTON_CENTER = QPointF(HEIGHT / 2, HEIGHT / 2)
+TEXT_X = HEIGHT / 2 + BUTTON / 2 + 13
+SCISSORS_W = 34
 
 GOLD_THREAD = QColor("#E4C57A")
 RIBBON_ROSE = QColor("#E8798E")
@@ -85,8 +90,7 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setWindowTitle("Gwensper")
         self.setCursor(Qt.PointingHandCursor)
-        self.font_ = QFont("Constantia", 11)
-        self.font_.setStyleHint(QFont.Serif)
+        self.font_ = ui_font(12.5, QFont.Medium)
 
         self.state = "loading"
         self.text = "Iniciando"
@@ -96,6 +100,7 @@ class Overlay(QWidget):
         self.animate = _animations_enabled()
         self._phase = 0.0
         self._stitch_offset = 0.0
+        self._stitch_speed = 0.0
         self._thread_cache: tuple[int, tuple[float, int]] = (-1, (0.0, 1))
         self._press: QPoint | None = None
         self._origin = QPoint()
@@ -143,15 +148,18 @@ class Overlay(QWidget):
 
     def _relayout(self) -> None:
         tw = QFontMetrics(self.font_).horizontalAdvance(self.text)
-        self.setFixedSize(PAD + BUTTON + 11 + tw + 16 + self._extra_width(), HEIGHT)
+        self.setFixedSize(int(TEXT_X + tw + 24 + self._extra_width()), HEIGHT)
 
     def _tick(self) -> None:
         if not self.animate:
             return
         self._phase = (self._phase + 0.12) % (2 * math.pi * 1000)
         if self.state == "listening":
-            # La puntada avanza; más rápido cuanto más fuerte se habla.
-            self._stitch_offset -= 0.35 + 2.2 * self.level
+            # La puntada avanza sin prisa y acelera cuanto más fuerte se habla;
+            # la velocidad se suaviza para que no cambie de golpe.
+            target = 0.12 + 1.5 * self.level
+            self._stitch_speed += 0.15 * (target - self._stitch_speed)
+            self._stitch_offset -= self._stitch_speed
         else:
             self.level *= 0.8
         if self.state in ("listening", "loading") or self.busy:
@@ -165,11 +173,11 @@ class Overlay(QWidget):
         return path
 
     def _draw_stitches(self, p: QPainter) -> None:
-        path = self._patch_path(4.5)
+        path = self._patch_path(STITCH_INSET)
         pen = QPen(Qt.SolidLine)
-        pen.setWidthF(1.4)
+        pen.setWidthF(1.5)
         pen.setCapStyle(Qt.RoundCap)
-        pen.setDashPattern([2.6, 2.4])
+        pen.setDashPattern([3.0, 2.8])
 
         if self.state == "listening":
             pen.setColor(_with_alpha(MIST, 110 + int(140 * self.level)))
@@ -214,13 +222,13 @@ class Overlay(QWidget):
 
     def _draw_button(self, p: QPainter) -> None:
         color = BUTTON_COLOR.get(self.state, GWEN_BLUE)
-        c = QRectF(PAD, (HEIGHT - BUTTON) / 2, BUTTON, BUTTON)
-        center = c.center()
+        center = BUTTON_CENTER
+        c = QRectF(center.x() - BUTTON / 2, center.y() - BUTTON / 2, BUTTON, BUTTON)
 
         if self.state == "listening":
             # Niebla consagrada: se expande con la voz.
             breathe = 0.5 + 0.5 * math.sin(self._phase) if self.animate else 0.5
-            radius = BUTTON / 2 + 4 + 6 * self.level + 2 * breathe
+            radius = BUTTON / 2 + 3 + 5 * self.level + 2 * breathe
             glow = QRadialGradient(center, radius)
             glow.setColorAt(0.55, _with_alpha(MIST, 120))
             glow.setColorAt(1.0, _with_alpha(MIST, 0))
@@ -234,7 +242,7 @@ class Overlay(QWidget):
         p.setPen(QPen(_with_alpha(PORCELAIN, 170), 1.2))
         p.setBrush(color)
         p.drawEllipse(c)
-        draw_mic(p, c.adjusted(8, 6.5, -8, -6.5), INK_BOTTOM)
+        draw_mic(p, c.adjusted(8.5, 7, -8.5, -7), INK_BOTTOM)
 
         if self.state == "loading" and self.progress < 0:
             spin = QPen(GOLD_THREAD, 2, Qt.SolidLine, Qt.RoundCap)
@@ -260,13 +268,13 @@ class Overlay(QWidget):
 
         p.setFont(self.font_)
         p.setPen(PORCELAIN if self.state != "error" else _with_alpha(RIBBON_ROSE, 255).lighter(130))
-        tx = PAD + BUTTON + 11
-        p.drawText(QRectF(tx, 0, self.width() - tx - self._extra_width(), HEIGHT - 1), Qt.AlignVCenter, self.text)
+        p.drawText(QRectF(TEXT_X, 0, self.width() - TEXT_X - self._extra_width(), HEIGHT - 1),
+                   Qt.AlignVCenter, self.text)
 
         if self.state == "listening" and self.busy:
             snip = abs(math.sin(self._phase * 1.6)) if self.animate else 0.6
-            center = QPointF(self.width() - SCISSORS_W / 2 - 8, HEIGHT / 2)
-            draw_scissors(p, center, 21, 6 + 22 * snip, GOLD_THREAD)
+            center = QPointF(self.width() - SCISSORS_W / 2 - 12, HEIGHT / 2)
+            draw_scissors(p, center, 23, 6 + 22 * snip, GOLD_THREAD)
         p.end()
 
     # ---------- interacción ----------

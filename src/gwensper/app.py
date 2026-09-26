@@ -13,7 +13,7 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from . import APP_NAME, postprocess, shortcuts, winapi
+from . import APP_NAME, fonts, postprocess, shortcuts, winapi
 from .audio import FileSource, Microphone
 from .config import Config, data_dir
 from .hotkey import GlobalHotkey
@@ -336,6 +336,7 @@ def run(test_audio: str | None = None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setWindowIcon(app_icon())
+    fonts.load()
     app.setQuitOnLastWindowClosed(False)
 
     # Instancia única: si ya está abierta, solo muestra el indicador.
