@@ -24,14 +24,14 @@ from . import winapi
 from .fonts import ui_font
 from .icon import GWEN_BLUE, INK_BOTTOM, INK_TOP, MIST, PORCELAIN, draw_mic
 
-HEIGHT = 52
-BUTTON = 32
+HEIGHT = 46
+BUTTON = 28
 STITCH_INSET = 5.0
 # El botón es concéntrico con el arco izquierdo de la costura: queda un margen parejo
-# de (HEIGHT/2 - STITCH_INSET) - BUTTON/2 = 5 px entre el botón y las puntadas.
+# de (HEIGHT/2 - STITCH_INSET) - BUTTON/2 = 4 px entre el botón y las puntadas.
 BUTTON_CENTER = QPointF(HEIGHT / 2, HEIGHT / 2)
-TEXT_X = HEIGHT / 2 + BUTTON / 2 + 13
-SCISSORS_W = 34
+TEXT_X = HEIGHT / 2 + BUTTON / 2 + 11
+SCISSORS_W = 30
 
 GOLD_THREAD = QColor("#E4C57A")
 RIBBON_ROSE = QColor("#E8798E")
@@ -90,7 +90,7 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setWindowTitle("Gwensper")
         self.setCursor(Qt.PointingHandCursor)
-        self.font_ = ui_font(12.5, QFont.Medium)
+        self.font_ = ui_font(11.5, QFont.Medium)
 
         self.state = "loading"
         self.text = "Iniciando"
@@ -148,7 +148,7 @@ class Overlay(QWidget):
 
     def _relayout(self) -> None:
         tw = QFontMetrics(self.font_).horizontalAdvance(self.text)
-        self.setFixedSize(int(TEXT_X + tw + 24 + self._extra_width()), HEIGHT)
+        self.setFixedSize(int(TEXT_X + tw + 20 + self._extra_width()), HEIGHT)
 
     def _tick(self) -> None:
         if not self.animate:
@@ -242,7 +242,7 @@ class Overlay(QWidget):
         p.setPen(QPen(_with_alpha(PORCELAIN, 170), 1.2))
         p.setBrush(color)
         p.drawEllipse(c)
-        draw_mic(p, c.adjusted(8.5, 7, -8.5, -7), INK_BOTTOM)
+        draw_mic(p, c.adjusted(7.5, 6, -7.5, -6), INK_BOTTOM)
 
         if self.state == "loading" and self.progress < 0:
             spin = QPen(GOLD_THREAD, 2, Qt.SolidLine, Qt.RoundCap)
@@ -273,8 +273,8 @@ class Overlay(QWidget):
 
         if self.state == "listening" and self.busy:
             snip = abs(math.sin(self._phase * 1.6)) if self.animate else 0.6
-            center = QPointF(self.width() - SCISSORS_W / 2 - 12, HEIGHT / 2)
-            draw_scissors(p, center, 23, 6 + 22 * snip, GOLD_THREAD)
+            center = QPointF(self.width() - SCISSORS_W / 2 - 10, HEIGHT / 2)
+            draw_scissors(p, center, 21, 6 + 22 * snip, GOLD_THREAD)
         p.end()
 
     # ---------- interacción ----------

@@ -34,7 +34,7 @@ def main(out: Path) -> None:
         ("Error", lambda o: o.set_state("error", "Micrófono no disponible")),
     ]
     shots = [(label, snap(fn)) for label, fn in states]
-    row_h, label_w, pad = 72, 200, 24
+    row_h, label_w, pad = 64, 200, 22
     width = label_w + max(int(s.width() / s.devicePixelRatio()) for _, s in shots) + pad * 2
     height = row_h * len(shots) + pad * 2
     out_pm = QPixmap(width * 2, height * 2)
@@ -46,7 +46,7 @@ def main(out: Path) -> None:
     for i, (label, shot) in enumerate(shots):
         y = pad + i * row_h
         p.setPen(QColor("#AEB6D6"))
-        p.drawText(QPointF(pad, y + 31), label)
+        p.drawText(QPointF(pad, y + 28), label)
         p.drawPixmap(pad + label_w, y, shot)
     p.end()
     out.parent.mkdir(parents=True, exist_ok=True)
