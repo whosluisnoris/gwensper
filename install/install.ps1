@@ -136,6 +136,31 @@ function Test-NvidiaGpu {
     } catch { return $false }
 }
 
+# Busca cuBLAS y cuDNN de CUDA 12 ya instalados (p. ej. dentro de PyTorch o de un CUDA
+# Toolkit con cuDNN). Si están, no hace falta descargar ~1.3 GB del extra [cuda].
+function Find-CudaDlls {
+    $dirs = @()
+    $sitePackages = @(
+        "$env:LOCALAPPDATA\Packages\PythonSoftwareFoundation.Python*\LocalCache\local-packages\Python3*\site-packages",
+        "$env:LOCALAPPDATA\Programs\Python\Python3*\Lib\site-packages",
+        "$env:APPDATA\Python\Python3*\site-packages",
+        "C:\Program Files\Python3*\Lib\site-packages"
+    )
+    foreach ($pattern in $sitePackages) {
+        foreach ($sp in (Get-ChildItem $pattern -Directory -ErrorAction SilentlyContinue)) {
+            $dirs += Join-Path $sp.FullName "torch\lib"
+        }
+    }
+    if ($env:CUDA_PATH) { $dirs += Join-Path $env:CUDA_PATH "bin" }
+    foreach ($d in $dirs) {
+        if ((Test-Path (Join-Path $d "cublas64_12.dll")) -and (Test-Path (Join-Path $d "cublasLt64_12.dll")) -and
+            (Test-Path (Join-Path $d "cudnn64_9.dll")) -and (Test-Path (Join-Path $d "cudnn_ops64_9.dll"))) {
+            return $d
+        }
+    }
+    return $null
+}
+
 # Cierra Gwensper si corre desde esta instalación. El Python real de la app es un proceso
 # hijo cuya ruta está fuera de la carpeta, por eso también se busca en la línea de comandos.
 function Stop-InstalledApp([string]$dir) {
@@ -225,8 +250,19 @@ if (-not $pyInfo) {
 Done "Python $($pyInfo.Version)"
 
 $gpu = switch ($Mode) { "gpu" { $true } "cpu" { $false } default { Test-NvidiaGpu } }
-if ($gpu) { Info "Detecté una GPU NVIDIA: instalaré la aceleración CUDA (unos 1.3 GB extra)." }
-else { Info "Sin GPU NVIDIA: Gwensper funcionará con el procesador." }
+$cudaDir = $null
+if ($gpu) {
+    $cudaDir = Find-CudaDlls
+    if ($cudaDir) {
+        Info "Detecté una GPU NVIDIA y ya tienes las librerías de CUDA en:"
+        Info "  $cudaDir"
+        Info "Gwensper usará esas; no hace falta descargar 1.3 GB más."
+    } else {
+        Info "Detecté una GPU NVIDIA: instalaré la aceleración CUDA (unos 1.3 GB extra)."
+    }
+} else {
+    Info "Sin GPU NVIDIA: Gwensper funcionará con el procesador."
+}
 
 Stop-InstalledApp $InstallDir
 
@@ -249,15 +285,21 @@ if (-not (Test-Path $vpy)) {
 Done "Entorno listo"
 
 Step "Instalando Gwensper y sus librerías (puede tardar varios minutos, no cierres esta ventana)"
+$withCuda = $gpu -and -not $cudaDir
 if ($Source -match "^https?://") {
-    $spec = if ($gpu) { "gwensper[cuda] @ $Source" } else { "gwensper @ $Source" }
+    $spec = if ($withCuda) { "gwensper[cuda] @ $Source" } else { "gwensper @ $Source" }
 } else {
-    $spec = if ($gpu) { "$Source[cuda]" } else { $Source }
+    $spec = if ($withCuda) { "$Source[cuda]" } else { $Source }
 }
 Invoke-Checked "no se pudo actualizar pip" $vpy @("-m", "pip", "install", "--upgrade", "--quiet", "--disable-pip-version-check", "pip")
 Invoke-Checked "no se pudieron instalar las librerías" $vpy @("-m", "pip", "install", "--upgrade", "--quiet", "--disable-pip-version-check", $spec)
 # Fuerza la versión más reciente de Gwensper aunque el número de versión no haya cambiado.
 Invoke-Checked "no se pudo instalar Gwensper" $vpy @("-m", "pip", "install", "--upgrade", "--force-reinstall", "--no-deps", "--quiet", "--disable-pip-version-check", $Source)
+if ($cudaDir) {
+    # Guarda en la configuración de Gwensper dónde están las DLL de CUDA existentes.
+    $env:GWENSPER_CUDA_PATH = $cudaDir
+    Invoke-Checked "no se pudo guardar la configuración" $vpy @("-c", "import os; from gwensper.config import Config; c = Config.load(); c.cuda_path = os.environ['GWENSPER_CUDA_PATH']; c.save()")
+}
 Done "Librerías instaladas"
 
 Step "Descargando el modelo de voz"

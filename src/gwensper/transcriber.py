@@ -99,7 +99,7 @@ class Transcriber:
         status = on_status or (lambda _m: None)
         wanted = self.cfg.device
         if wanted in ("auto", "cuda"):
-            cuda_dlls.register()
+            cuda_dlls.register(self.cfg.cuda_path)
             if cuda_dlls.cuda_device_count() > 0:
                 try:
                     self._load("cuda", status, on_progress)

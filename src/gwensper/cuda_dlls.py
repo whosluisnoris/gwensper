@@ -38,12 +38,17 @@ def _candidate_dirs() -> list[Path]:
     return [d for d in dirs if d.is_dir()]
 
 
-def register() -> None:
+def register(extra_dir: str = "") -> None:
+    """`extra_dir`: carpeta con cuBLAS/cuDNN ya instalados (la detecta el instalador)."""
     global _registered
     if _registered or sys.platform != "win32":
         return
     _registered = True
-    for bin_dir in _candidate_dirs():
+    dirs = _candidate_dirs()
+    if extra_dir and Path(extra_dir).is_dir():
+        dirs.insert(0, Path(extra_dir))
+    # Al revés: cada carpeta se antepone al PATH, así la primera queda con más prioridad.
+    for bin_dir in reversed(dirs):
         os.add_dll_directory(str(bin_dir))
         # ctranslate2 carga cuBLAS con LoadLibrary, que busca en PATH.
         os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")

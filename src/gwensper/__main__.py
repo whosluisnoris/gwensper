@@ -58,6 +58,11 @@ def _download_model(name: str) -> int:
     from .transcriber import ensure_model
 
     info = BY_NAME.get(name)
+    from .models import is_downloaded
+
+    if is_downloaded(name):
+        print(f"Ya tienes el modelo {name}: no hace falta descargarlo.", flush=True)
+        return 0
     print(f"Descargando el modelo {name}" + (f" (unos {info.size_mb} MB)" if info else "") + "...", flush=True)
     last = [-10]
 

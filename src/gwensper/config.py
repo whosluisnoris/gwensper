@@ -59,6 +59,7 @@ class Config:
     sensitivity: float = 3.0      # umbral de voz = ruido de fondo x sensibilidad
     insert_mode: str = "type"     # type | paste
     live_mode: str = "auto"       # auto (en vivo solo con GPU) | on | off
+    cuda_path: str = ""           # carpeta con DLLs de CUDA 12 ya instaladas (p. ej. torch\lib)
     overlay_always: bool = False  # False = la píldora solo aparece mientras dictas
     overlay_x: int | None = None
     overlay_y: int | None = None
