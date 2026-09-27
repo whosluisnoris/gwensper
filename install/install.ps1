@@ -105,10 +105,15 @@ function Find-Python {
     return $null
 }
 
+# /passive muestra la barra de progreso de Python (sin preguntas). Se omiten las pruebas,
+# la documentación y Tcl/Tk: Gwensper no los usa y alargan varios minutos la instalación.
+$PythonInstallArgs = "/passive /norestart InstallAllUsers=0 PrependPath=1 Include_launcher=1 Include_test=0 Include_doc=0 Include_tcltk=0"
+
 function Install-Python {
+    Info "Voy a instalar Python 3.12 (solo para tu usuario). Tarda de 2 a 5 minutos"
+    Info "y verás su barra de progreso. No cierres esta ventana."
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Info "Instalando Python 3.12 con winget…"
-        & winget install -e --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements | Out-Host
+        & winget install -e --id Python.Python.3.12 --scope user --accept-package-agreements --accept-source-agreements --override $PythonInstallArgs | Out-Host
         if ($LASTEXITCODE -eq 0) { return }
         Info "winget no pudo; lo intento con el instalador de python.org."
     }
@@ -116,8 +121,7 @@ function Install-Python {
     $installer = Join-Path $env:TEMP "python-3.12.10-amd64.exe"
     Info "Descargando Python 3.12 desde python.org…"
     Invoke-WebRequest $url -OutFile $installer -UseBasicParsing
-    Info "Instalando Python 3.12 (solo para tu usuario)…"
-    $p = Start-Process $installer -ArgumentList "/quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1 Include_test=0" -Wait -PassThru
+    $p = Start-Process $installer -ArgumentList $PythonInstallArgs -Wait -PassThru
     Remove-Item $installer -ErrorAction SilentlyContinue
     if ($p.ExitCode -notin 0, 3010) { Stop-WithError "el instalador de Python terminó con código $($p.ExitCode)." }
 }
@@ -212,7 +216,7 @@ if ($Python) {
     $pyInfo = Find-Python
 }
 if (-not $pyInfo) {
-    Info "No encontré un Python compatible (3.$MinorMin a 3.$MinorMax, 64 bits)."
+    Info "No hay un Python que Gwensper pueda usar en tu PC (necesita 3.$MinorMin a 3.$MinorMax de 64 bits)."
     Install-Python
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
     $pyInfo = Find-Python
@@ -244,7 +248,7 @@ if (-not (Test-Path $vpy)) {
 }
 Done "Entorno listo"
 
-Step "Instalando Gwensper y sus librerías (puede tardar unos minutos)"
+Step "Instalando Gwensper y sus librerías (puede tardar varios minutos, no cierres esta ventana)"
 if ($Source -match "^https?://") {
     $spec = if ($gpu) { "gwensper[cuda] @ $Source" } else { "gwensper @ $Source" }
 } else {
