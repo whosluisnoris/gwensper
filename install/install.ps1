@@ -286,6 +286,8 @@ if (-not $NoShortcut) {
 
 Write-Host ""
 Write-Host "  Gwensper quedó instalado." -ForegroundColor Green
-Write-Host "  Búscalo como 'Gwensper' en el menú Inicio. Para dictar, presiona Ctrl+Alt+D en cualquier app."
+if ($NoShortcut) { Write-Host "  Ábrelo con: $exe" }
+else { Write-Host "  Búscalo como 'Gwensper' en el menú Inicio." }
+Write-Host "  Para dictar, presiona Ctrl+Alt+D en cualquier app."
 if (-not $NoLaunch) { Start-Process $exe }
 if (-not $NoPause) { Read-Host "Presiona Enter para cerrar" | Out-Null }
